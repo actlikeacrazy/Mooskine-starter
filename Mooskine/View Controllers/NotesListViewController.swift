@@ -177,5 +177,4 @@ extension NotesListViewController: NSFetchedResultsControllerDelegate {
             break
         }
     }
-    
 }

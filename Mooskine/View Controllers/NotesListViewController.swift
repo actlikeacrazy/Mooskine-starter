@@ -29,7 +29,7 @@ class NotesListViewController: UIViewController, UITableViewDataSource {
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        
+        setUpFetchResultController()
         
         navigationItem.title = notebook.name
         navigationItem.rightBarButtonItem = editButtonItem
@@ -47,6 +47,7 @@ class NotesListViewController: UIViewController, UITableViewDataSource {
     
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
+        print("Fetch Results Controller is Nil")
         fetchedResultsController = nil
     }
     
@@ -63,7 +64,7 @@ class NotesListViewController: UIViewController, UITableViewDataSource {
     // Adds a new `Note` to the end of the `notebook`'s `notes` array
     func addNote() {
         let note = Note(context: dataController.viewContext)
-        note.text = "New Note"
+        note.attributedText = NSAttributedString(string: "New Note")
         note.creationDate = Date()
         note.notebook = notebook
         try? dataController.viewContext.save()
@@ -78,7 +79,11 @@ class NotesListViewController: UIViewController, UITableViewDataSource {
     }
     
     func updateEditButtonState() {
-        navigationItem.rightBarButtonItem?.isEnabled = fetchedResultsController.sections![0].numberOfObjects > 0
+        guard let objectCount = fetchedResultsController else {
+            navigationItem.rightBarButtonItem?.isEnabled = false
+            return
+        }
+        navigationItem.rightBarButtonItem?.isEnabled = objectCount.sections![0].numberOfObjects > 0
     }
     
     override func setEditing(_ editing: Bool, animated: Bool) {
@@ -86,11 +91,32 @@ class NotesListViewController: UIViewController, UITableViewDataSource {
         tableView.setEditing(editing, animated: animated)
     }
     
+    fileprivate func setUpFetchResultController() {
+        print("Starting the set up of Fetch Result Controller")
+        let fetchRequest: NSFetchRequest<Note> = Note.fetchRequest()
+        let predicate = NSPredicate(format: "notebook == %@", notebook)
+        fetchRequest.predicate = predicate
+        let sortDescriptor = NSSortDescriptor(key: "creationDate", ascending: false)
+        fetchRequest.sortDescriptors = [sortDescriptor]
+        
+        fetchedResultsController = NSFetchedResultsController(fetchRequest: fetchRequest, managedObjectContext: dataController.viewContext, sectionNameKeyPath: nil, cacheName: "\(notebook.name!)")
+        fetchedResultsController.delegate = self
+        do {
+            try fetchedResultsController.performFetch()
+        } catch {
+            fatalError("The fetch could not be performed: \(error.localizedDescription)")
+        }
+        print("Finishing the set up of Fetch Result Controller")
+    }
+    
     // -------------------------------------------------------------------------
     // MARK: - Table view data source
     
     func numberOfSections(in tableView: UITableView) -> Int {
-        return fetchedResultsController.sections?.count ?? 1
+        guard let controller = fetchedResultsController else {
+            return 1
+        }
+        return controller.sections?.count ?? 1
     }
     
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
@@ -102,7 +128,7 @@ class NotesListViewController: UIViewController, UITableViewDataSource {
         let cell = tableView.dequeueReusableCell(withIdentifier: NoteCell.defaultReuseIdentifier, for: indexPath) as! NoteCell
         
         // Configure cell
-        cell.textPreviewLabel.text = aNote.text
+        cell.textPreviewLabel.attributedText = aNote.attributedText
         if let creationDate = aNote.creationDate {
             cell.dateLabel.text = dateFormatter.string(from: creationDate)
         }
@@ -138,22 +164,6 @@ class NotesListViewController: UIViewController, UITableViewDataSource {
 
 
 extension NotesListViewController: NSFetchedResultsControllerDelegate {
-    
-    fileprivate func setUpFetchResultController() {
-        let fetchRequest: NSFetchRequest<Note> = Note.fetchRequest()
-        let predicate = NSPredicate(format: "notebook == %@", notebook)
-        fetchRequest.predicate = predicate
-        let sortDescriptor = NSSortDescriptor(key: "creationDate", ascending: false)
-        fetchRequest.sortDescriptors = [sortDescriptor]
-        
-        fetchedResultsController = NSFetchedResultsController(fetchRequest: fetchRequest, managedObjectContext: dataController.viewContext, sectionNameKeyPath: nil, cacheName: "\(String(describing: notebook))")
-        fetchedResultsController.delegate = self
-        do {
-            try fetchedResultsController.performFetch()
-        } catch {
-            fatalError("The fetch could not be performed: \(error.localizedDescription)")
-        }
-    }
     
     func controllerWillChangeContent(_ controller: NSFetchedResultsController<NSFetchRequestResult>) {
         tableView.beginUpdates()

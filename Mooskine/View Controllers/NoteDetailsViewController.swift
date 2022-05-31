@@ -7,6 +7,7 @@
 //
 
 import UIKit
+import CoreData
 
 class NoteDetailsViewController: UIViewController {
     /// A text view that displays a note's text
@@ -15,6 +16,8 @@ class NoteDetailsViewController: UIViewController {
     var dataController: DataController!
     /// The note being displayed and edited
     var note: Note!
+    
+    var saveObserverToken: Any?
 
     /// A closure that is run when the user asks to delete the current note
     var onDelete: (() -> Void)?
@@ -27,17 +30,24 @@ class NoteDetailsViewController: UIViewController {
     }()
 
     override func viewDidLoad() {
-          super.viewDidLoad()
-
-          if let creationDate = note.creationDate {
-              navigationItem.title = dateFormatter.string(from: creationDate)
-          }
-          textView.attributedText = note.attributedText
-
-          // keyboard toolbar configuration
-          configureToolbarItems()
-          configureTextViewInputAccessoryView()
-      }
+        super.viewDidLoad()
+        
+        if let creationDate = note.creationDate {
+            navigationItem.title = dateFormatter.string(from: creationDate)
+        }
+        textView.attributedText = note.attributedText
+        
+        // keyboard toolbar configuration
+        configureToolbarItems()
+        configureTextViewInputAccessoryView()
+        
+        addSaveNotificationObserver()
+    }
+    
+    deinit {
+        
+        removeSaveNotificationObserver()
+    }
 
     @IBAction func deleteNote(sender: Any) {
         presentDeleteNotebookAlert()
@@ -82,8 +92,8 @@ extension NoteDetailsViewController {
         let trash = UIBarButtonItem(barButtonSystemItem: .trash, target: self, action: #selector(deleteTapped(sender:)))
         let space = UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil)
         let bold = UIBarButtonItem(image: UIImage(named: "toolbar-bold"), style: .plain, target: self, action: #selector(boldTapped(sender:)))
-        let cow = UIBarButtonItem(image: UIImage(named: "toolbar-cow"), style: .plain, target: self, action: #selector(redTapped(sender:)))
-        let red = UIBarButtonItem(image: UIImage(named: "toolbar-underline"), style: .plain, target: self, action: #selector(cowTapped(sender:)))
+        let cow = UIBarButtonItem(image: UIImage(named: "toolbar-cow"), style: .plain, target: self, action: #selector(cowTapped(sender:)))
+        let red = UIBarButtonItem(image: UIImage(named: "toolbar-underline"), style: .plain, target: self, action: #selector(redTapped(sender:)))
         
         return [trash, space, bold, space, cow, space, red]
     }
@@ -119,7 +129,7 @@ extension NoteDetailsViewController {
         try? dataController.viewContext.save()
     }
     
-    @IBAction func cowTapped(sender: Any) {
+    @IBAction func redTapped(sender: Any) {
         let newText = textView.attributedText.mutableCopy() as! NSMutableAttributedString
         let attributes: [NSAttributedString.Key : Any] = [
             .foregroundColor: UIColor.red,
@@ -135,17 +145,25 @@ extension NoteDetailsViewController {
         try? dataController.viewContext.save()
     }
     
-    @IBAction func redTapped(sender: Any) {
+    @IBAction func cowTapped(sender: Any) {
+        let backgroundContext:NSManagedObjectContext! = dataController.backgroundContext
         let newText = textView.attributedText.mutableCopy() as! NSMutableAttributedString
         let selectedRange = textView.selectedRange
         let selectedText = textView.attributedText.attributedSubstring(from: selectedRange)
-        let cowText = Pathifier.makeMutableAttributedString(for: selectedText, withFont: UIFont(name: "AvenirNext-Heavy", size: 26)!, withPatternImage: UIImage(named: "texture-cow")!)
-        newText.replaceCharacters(in: selectedRange, with: cowText)
         
-        textView.attributedText = newText
-        textView.selectedRange = NSMakeRange(selectedRange.location, 1)
-        note.attributedText = textView.attributedText
-        try? dataController.viewContext.save()
+        let noteID = note.objectID
+        
+        backgroundContext.perform {
+            let backgroundNote = backgroundContext.object(with: noteID) as! Note
+            sleep(5)
+            let cowText = Pathifier.makeMutableAttributedString(for: selectedText, withFont: UIFont(name: "AvenirNext-Heavy", size: 26)!, withPatternImage: UIImage(named: "texture-cow")!)
+            newText.replaceCharacters(in: selectedRange, with: cowText)
+            backgroundNote.attributedText = newText
+            try? backgroundContext.save()
+        }
+//        textView.attributedText = newText
+//        textView.selectedRange = NSMakeRange(selectedRange.location, 1)
+
     }
     
 
@@ -163,4 +181,32 @@ extension NoteDetailsViewController {
         alert.addAction(deleteAction)
         present(alert, animated: true, completion: nil)
     }
+}
+
+extension NoteDetailsViewController {
+    
+    func addSaveNotificationObserver() {
+        removeSaveNotificationObserver()
+        saveObserverToken = NotificationCenter.default.addObserver(forName: .NSManagedObjectContextObjectsDidChange, object: dataController.viewContext, queue: nil, using: handleSaveNotification(notification:))
+        
+    }
+    
+    func removeSaveNotificationObserver() {
+        
+        if let token = saveObserverToken {
+            NotificationCenter.default.removeObserver(token)
+        }
+        
+    }
+    
+    fileprivate func reloadText() {
+        textView.attributedText = note.attributedText
+    }
+    
+    func handleSaveNotification(notification: Notification) {
+        DispatchQueue.main.async {
+            self.reloadText()
+        }
+    }
+    
 }
